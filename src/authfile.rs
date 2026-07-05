@@ -15,14 +15,19 @@ use std::path::Path;
 
 /// Read the current Zen (`opencode`) API key from auth.json, if present.
 pub fn read_zen_key() -> Result<Option<String>> {
-    let path = paths::opencode_auth_json()?;
-    read_zen_key_at(&path)
+    read_key(ZEN_PROVIDER_ID)
 }
 
-/// Overwrite the Zen (`opencode`) API key in auth.json, preserving all other entries.
-pub fn set_zen_key(key: &str) -> Result<()> {
+/// Read the current API key for `provider_id` from auth.json, if present.
+pub fn read_key(provider_id: &str) -> Result<Option<String>> {
     let path = paths::opencode_auth_json()?;
-    set_zen_key_at(&path, key)
+    read_key_at(&path, provider_id)
+}
+
+/// Overwrite the API key for `provider_id` in auth.json, preserving all other entries.
+pub fn set_key(provider_id: &str, key: &str) -> Result<()> {
+    let path = paths::opencode_auth_json()?;
+    set_key_at(&path, provider_id, key)
 }
 
 fn load(path: &Path) -> Result<Map<String, Value>> {
@@ -42,21 +47,21 @@ fn load(path: &Path) -> Result<Map<String, Value>> {
     }
 }
 
-fn read_zen_key_at(path: &Path) -> Result<Option<String>> {
+fn read_key_at(path: &Path, provider_id: &str) -> Result<Option<String>> {
     let map = load(path)?;
     Ok(map
-        .get(ZEN_PROVIDER_ID)
+        .get(provider_id)
         .and_then(|entry| entry.get("key"))
         .and_then(|k| k.as_str())
         .map(|s| s.to_string()))
 }
 
-fn set_zen_key_at(path: &Path, key: &str) -> Result<()> {
+fn set_key_at(path: &Path, provider_id: &str, key: &str) -> Result<()> {
     let mut map = load(path)?;
 
-    // Preserve any existing metadata on the opencode entry; only force type + key.
+    // Preserve any existing metadata on the provider entry; only force type + key.
     let entry = map
-        .entry(ZEN_PROVIDER_ID.to_string())
+        .entry(provider_id.to_string())
         .or_insert_with(|| Value::Object(Map::new()));
     let obj = match entry {
         Value::Object(o) => o,
@@ -95,7 +100,7 @@ mod tests {
         });
         std::fs::write(&path, serde_json::to_vec_pretty(&seed).unwrap()).unwrap();
 
-        set_zen_key_at(&path, "new-zen-key").unwrap();
+        set_key_at(&path, ZEN_PROVIDER_ID, "new-zen-key").unwrap();
 
         let map = load(&path).unwrap();
         // openrouter untouched
@@ -106,7 +111,7 @@ mod tests {
         assert_eq!(map["opencode"]["metadata"]["note"], "keep");
 
         assert_eq!(
-            read_zen_key_at(&path).unwrap().as_deref(),
+            read_key_at(&path, ZEN_PROVIDER_ID).unwrap().as_deref(),
             Some("new-zen-key")
         );
     }
@@ -115,8 +120,11 @@ mod tests {
     fn set_key_creates_file_when_missing() {
         let path = tmp_path("missing");
         let _ = std::fs::remove_file(&path);
-        set_zen_key_at(&path, "fresh").unwrap();
-        assert_eq!(read_zen_key_at(&path).unwrap().as_deref(), Some("fresh"));
+        set_key_at(&path, ZEN_PROVIDER_ID, "fresh").unwrap();
+        assert_eq!(
+            read_key_at(&path, ZEN_PROVIDER_ID).unwrap().as_deref(),
+            Some("fresh")
+        );
     }
 
     #[cfg(unix)]
@@ -124,7 +132,7 @@ mod tests {
     fn written_file_is_0600() {
         use std::os::unix::fs::PermissionsExt;
         let path = tmp_path("perms");
-        set_zen_key_at(&path, "secret").unwrap();
+        set_key_at(&path, ZEN_PROVIDER_ID, "secret").unwrap();
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600, "auth.json must be owner-only");
     }
@@ -133,6 +141,6 @@ mod tests {
     fn read_missing_key_is_none() {
         let path = tmp_path("none");
         std::fs::write(&path, br#"{"openrouter":{"type":"api","key":"x"}}"#).unwrap();
-        assert_eq!(read_zen_key_at(&path).unwrap(), None);
+        assert_eq!(read_key_at(&path, ZEN_PROVIDER_ID).unwrap(), None);
     }
 }

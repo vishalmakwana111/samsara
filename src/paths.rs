@@ -58,3 +58,23 @@ pub fn samsara_config_dir() -> Result<PathBuf> {
 pub fn samsara_keys_json() -> Result<PathBuf> {
     Ok(samsara_config_dir()?.join("keys.json"))
 }
+
+/// samsara's settings file: `<config>/config.json`.
+pub fn samsara_config_json() -> Result<PathBuf> {
+    Ok(samsara_config_dir()?.join("config.json"))
+}
+
+/// samsara's state dir: `$XDG_STATE_HOME/samsara` or `~/.local/state/samsara`.
+pub fn samsara_state_dir() -> Result<PathBuf> {
+    Ok(xdg_dir("XDG_STATE_HOME", ".local/state")?.join("samsara"))
+}
+
+/// samsara's rotation history log: `<state>/history.jsonl`.
+pub fn samsara_history_jsonl() -> Result<PathBuf> {
+    Ok(samsara_state_dir()?.join("history.jsonl"))
+}
+
+/// samsara daemon PID file: `<state>/daemon.pid`.
+pub fn samsara_pidfile() -> Result<PathBuf> {
+    Ok(samsara_state_dir()?.join("daemon.pid"))
+}

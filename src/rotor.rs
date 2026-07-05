@@ -40,6 +40,7 @@ pub fn decide(
     hit: &LimitHit,
     default_cooldown: Duration,
     now: u64,
+    policy: crate::config::Policy,
 ) -> Outcome {
     if store.keys.is_empty() {
         return Outcome::Empty;
@@ -50,9 +51,9 @@ pub fn decide(
         let _ = store.set_cooldown(&active, until, Some(hit.message.clone()));
     }
 
-    match store.next_available(now).map(|k| k.label.clone()) {
+    match store.select_next(policy, now).map(|k| k.label.clone()) {
         Some(next) => {
-            store.active = Some(next.clone());
+            store.make_active(&next);
             Outcome::Switched { from, to: next }
         }
         None => {
@@ -62,20 +63,38 @@ pub fn decide(
     }
 }
 
-/// Full side-effecting rotation: decide, persist, mirror to auth.json, and reload the daemon.
+/// Full side-effecting rotation: decide, persist, mirror to auth.json, reload the daemon,
+/// and record the event in history.
 pub fn rotate(store: &mut KeyStore, hit: &LimitHit, default_cooldown: Duration) -> Result<Outcome> {
-    let outcome = decide(store, hit, default_cooldown, now_secs());
+    let policy = crate::config::Settings::load()
+        .map(|s| s.policy)
+        .unwrap_or_default();
+    let outcome = decide(store, hit, default_cooldown, now_secs(), policy);
     store.save()?;
 
-    if let Outcome::Switched { to, .. } = &outcome {
-        if let Some(entry) = store.find(to) {
-            authfile::set_zen_key(&entry.key)?;
+    match &outcome {
+        Outcome::Switched { from, to } => {
+            if let Some(entry) = store.find(to) {
+                authfile::set_key(entry.provider.auth_id(), &entry.key)?;
+            }
+            crate::history::append(
+                &crate::history::Event::new("rotate")
+                    .from(from.clone())
+                    .to(to.clone())
+                    .note(hit.message.clone()),
+            );
+            match local::reload() {
+                Ok(true) => tracing::info!("restarted opencode daemon to load key '{to}'"),
+                Ok(false) => {
+                    tracing::info!("opencode not running; key '{to}' applies on next start")
+                }
+                Err(e) => tracing::warn!("could not reload daemon: {e:#}"),
+            }
         }
-        match local::reload() {
-            Ok(true) => tracing::info!("restarted opencode daemon to load key '{to}'"),
-            Ok(false) => tracing::info!("opencode not running; key '{to}' applies on next start"),
-            Err(e) => tracing::warn!("could not reload daemon: {e:#}"),
-        }
+        Outcome::AllCooling { .. } => crate::history::append(
+            &crate::history::Event::new("exhausted").note(hit.message.clone()),
+        ),
+        Outcome::Empty => {}
     }
     Ok(outcome)
 }
@@ -99,7 +118,13 @@ mod tests {
             retry_after_secs: Some(3600),
             message: "12h limit".into(),
         };
-        let outcome = decide(&mut s, &hit, Duration::from_secs(43200), 1000);
+        let outcome = decide(
+            &mut s,
+            &hit,
+            Duration::from_secs(43200),
+            1000,
+            crate::config::Policy::RoundRobin,
+        );
         assert_eq!(
             outcome,
             Outcome::Switched {
@@ -118,7 +143,13 @@ mod tests {
             retry_after_secs: None,
             message: "limit".into(),
         };
-        decide(&mut s, &hit, Duration::from_secs(43200), 1000);
+        decide(
+            &mut s,
+            &hit,
+            Duration::from_secs(43200),
+            1000,
+            crate::config::Policy::RoundRobin,
+        );
         assert_eq!(s.find("a").unwrap().cooling_until, Some(1000 + 43200));
     }
 
@@ -131,7 +162,13 @@ mod tests {
             message: "limit".into(),
         };
         // active a gets cooled to 2000; b cools to 5000 → all cooling, soonest = 2000
-        let outcome = decide(&mut s, &hit, Duration::from_secs(43200), 1000);
+        let outcome = decide(
+            &mut s,
+            &hit,
+            Duration::from_secs(43200),
+            1000,
+            crate::config::Policy::RoundRobin,
+        );
         assert_eq!(outcome, Outcome::AllCooling { resume_at: 2000 });
     }
 
@@ -143,7 +180,13 @@ mod tests {
             message: "x".into(),
         };
         assert_eq!(
-            decide(&mut s, &hit, Duration::from_secs(1), 0),
+            decide(
+                &mut s,
+                &hit,
+                Duration::from_secs(1),
+                0,
+                crate::config::Policy::RoundRobin
+            ),
             Outcome::Empty
         );
     }

@@ -32,6 +32,11 @@ pub async fn run(
         if store.keys.is_empty() {
             anyhow::bail!("no keys in the pool — add some with `samsara add <key>` first");
         }
+        // single-instance guard
+        if let Some(pid) = crate::service::daemon_pid() {
+            anyhow::bail!("a samsara daemon is already running (pid {pid})");
+        }
+        crate::service::write_pidfile()?;
         println!(
             "{}",
             crate::ui::constellation(&store.keys, store.active.as_deref(), 1.0)
@@ -147,6 +152,97 @@ async fn handle_hit(hit: LimitHit, default_cooldown: Duration) -> Result<()> {
         rotor::Outcome::Empty => tracing::error!("no keys in pool"),
     }
     Ok(())
+}
+
+/// Live full-screen dashboard: a twinkling constellation + recent history, refreshed
+/// in place. Uses the alternate screen buffer; Ctrl-C restores the terminal.
+pub async fn watch() -> Result<()> {
+    use std::io::Write;
+    print!("\x1b[?1049h\x1b[?25l"); // alt screen + hide cursor
+    let _ = std::io::stdout().flush();
+
+    let res = tokio::select! {
+        _ = tokio::signal::ctrl_c() => Ok(()),
+        r = watch_loop() => r,
+    };
+
+    print!("\x1b[?25h\x1b[?1049l"); // restore
+    let _ = std::io::stdout().flush();
+    res
+}
+
+async fn watch_loop() -> Result<()> {
+    use std::io::Write;
+    let mut frame: u64 = 0;
+    loop {
+        let store = KeyStore::load()?;
+        let now = now_secs();
+        let pulse = if (frame / 2).is_multiple_of(2) {
+            1.0
+        } else {
+            0.45
+        };
+
+        let mut out = String::from("\x1b[2J\x1b[H");
+        out.push_str(&crate::ui::constellation(
+            &store.keys,
+            store.active.as_deref(),
+            pulse,
+        ));
+        out.push('\n');
+
+        // footer: daemon + soonest reset
+        let daemon = match crate::service::daemon_pid() {
+            Some(pid) => {
+                crate::ui::paint(crate::ui::GREEN, &format!("daemon watching (pid {pid})"))
+            }
+            None => crate::ui::paint(crate::ui::ASH, "daemon not running"),
+        };
+        out.push_str(&format!("  {daemon}\n"));
+        if let Some(reset) = store.soonest_reset(now) {
+            out.push_str(&format!(
+                "  {}\n",
+                crate::ui::paint(
+                    crate::ui::CYAN,
+                    &format!(
+                        "next rebirth in {}",
+                        crate::ui::fmt_dur(reset.saturating_sub(now))
+                    )
+                )
+            ));
+        }
+
+        // recent history tail
+        let events = crate::history::recent(5);
+        if !events.is_empty() {
+            out.push_str(&format!(
+                "\n  {}\n",
+                crate::ui::paint_bold(crate::ui::GOLD, "recent")
+            ));
+            for e in events {
+                let detail = match (e.from.as_deref(), e.to.as_deref()) {
+                    (Some(f), Some(t)) => format!("{f} → {t}"),
+                    (_, Some(t)) => t.to_string(),
+                    _ => e.note.clone().unwrap_or_default(),
+                };
+                out.push_str(&format!(
+                    "  {} {} {}\n",
+                    crate::ui::paint(
+                        crate::ui::ASH,
+                        &format!("{:>7}s ago", now.saturating_sub(e.ts))
+                    ),
+                    e.kind,
+                    detail
+                ));
+            }
+        }
+        out.push_str(&crate::ui::paint(crate::ui::ASH, "\n  Ctrl-C to exit\n"));
+
+        print!("{out}");
+        let _ = std::io::stdout().flush();
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        frame += 1;
+    }
 }
 
 /// Recursively search an event payload for the retry/limit marker and extract a `LimitHit`.

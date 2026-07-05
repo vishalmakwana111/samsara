@@ -2,15 +2,20 @@
 
 mod authfile;
 mod cli;
+mod config;
+mod doctor;
 mod fsx;
+mod history;
 mod keystore;
 mod local;
 mod model;
 mod paths;
 mod rotor;
+mod service;
 mod ui;
 mod update;
 mod watcher;
+mod zen;
 
 use clap::{CommandFactory, FromArgMatches};
 

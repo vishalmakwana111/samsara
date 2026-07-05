@@ -68,10 +68,8 @@ impl KeyStore {
         self.keys.push(KeyEntry {
             label: label.clone(),
             key,
-            cooling_until: None,
-            cooling_since: None,
-            last_error: None,
             added_at: Some(now_secs()),
+            ..Default::default()
         });
         // First key added becomes active by default.
         if self.active.is_none() {
@@ -96,6 +94,7 @@ impl KeyStore {
     }
 
     /// Mark a key as cooling down until `until` (unix secs), with an error note.
+    /// Also bumps its limit-hit counter.
     pub fn set_cooldown(&mut self, label: &str, until: u64, error: Option<String>) -> Result<()> {
         let entry = self
             .find_mut(label)
@@ -103,6 +102,36 @@ impl KeyStore {
         entry.cooling_since = Some(now_secs());
         entry.cooling_until = Some(until);
         entry.last_error = error;
+        entry.limit_hits = entry.limit_hits.saturating_add(1);
+        Ok(())
+    }
+
+    /// Make `label` the active key and stamp its last-active time.
+    pub fn make_active(&mut self, label: &str) {
+        self.active = Some(label.to_string());
+        if let Some(e) = self.find_mut(label) {
+            e.last_active = Some(now_secs());
+        }
+    }
+
+    pub fn set_pinned(&mut self, label: &str, on: bool) -> Result<()> {
+        self.find_mut(label)
+            .with_context(|| format!("no key labelled '{label}'"))?
+            .pinned = on;
+        Ok(())
+    }
+
+    pub fn set_disabled(&mut self, label: &str, on: bool) -> Result<()> {
+        self.find_mut(label)
+            .with_context(|| format!("no key labelled '{label}'"))?
+            .disabled = on;
+        Ok(())
+    }
+
+    pub fn set_priority(&mut self, label: &str, priority: i32) -> Result<()> {
+        self.find_mut(label)
+            .with_context(|| format!("no key labelled '{label}'"))?
+            .priority = priority;
         Ok(())
     }
 
@@ -111,27 +140,45 @@ impl KeyStore {
         self.active.as_deref().and_then(|l| self.find(l))
     }
 
-    /// Pick the next available (non-cooling) key after the active one, round-robin.
-    /// Returns `None` if every key is cooling.
-    pub fn next_available(&self, now: u64) -> Option<&KeyEntry> {
+    /// Is a key selectable right now? (not cooling, not disabled)
+    fn selectable(&self, k: &KeyEntry, now: u64) -> bool {
+        !k.is_cooling(now) && !k.disabled
+    }
+
+    /// Pick the next key according to `policy`, excluding the currently-active one.
+    /// Returns `None` if none are selectable.
+    pub fn select_next(&self, policy: crate::config::Policy, now: u64) -> Option<&KeyEntry> {
+        use crate::config::Policy;
         if self.keys.is_empty() {
             return None;
         }
-        let start = self
-            .active
-            .as_deref()
-            .and_then(|a| self.keys.iter().position(|k| k.label == a))
-            .unwrap_or(0);
-        let n = self.keys.len();
-        // Scan the ring starting just after the active key; allow reselecting active last.
-        for offset in 1..=n {
-            let idx = (start + offset) % n;
-            let cand = &self.keys[idx];
-            if !cand.is_cooling(now) {
-                return Some(cand);
+        let active = self.active.as_deref();
+        match policy {
+            Policy::RoundRobin => {
+                let start = active
+                    .and_then(|a| self.keys.iter().position(|k| k.label == a))
+                    .unwrap_or(0);
+                let n = self.keys.len();
+                for offset in 1..=n {
+                    let cand = &self.keys[(start + offset) % n];
+                    if self.selectable(cand, now) {
+                        return Some(cand);
+                    }
+                }
+                None
             }
+            Policy::Priority => self
+                .keys
+                .iter()
+                .filter(|k| Some(k.label.as_str()) != active && self.selectable(k, now))
+                // pinned first, then higher priority, then least-recently-active (LRU)
+                .min_by(|a, b| {
+                    b.pinned
+                        .cmp(&a.pinned)
+                        .then(b.priority.cmp(&a.priority))
+                        .then(a.last_active.unwrap_or(0).cmp(&b.last_active.unwrap_or(0)))
+                }),
         }
-        None
     }
 
     /// The soonest time (unix secs) any cooling key becomes available again.
@@ -176,13 +223,26 @@ mod tests {
         let mut s = store_with(&["a", "b", "c"]);
         // active = a. b cooling → should pick c.
         s.set_cooldown("b", 1000, None).unwrap();
-        assert_eq!(s.next_available(500).unwrap().label, "c");
+        assert_eq!(
+            s.select_next(crate::config::Policy::RoundRobin, 500)
+                .unwrap()
+                .label,
+            "c"
+        );
         // c also cooling → wraps, a not cooling → picks a (reselect active last)
         s.set_cooldown("c", 1000, None).unwrap();
-        assert_eq!(s.next_available(500).unwrap().label, "a");
+        assert_eq!(
+            s.select_next(crate::config::Policy::RoundRobin, 500)
+                .unwrap()
+                .label,
+            "a"
+        );
         // everything cooling → None
         s.set_cooldown("a", 1000, None).unwrap();
-        assert!(s.next_available(500).is_none());
+        assert!(
+            s.select_next(crate::config::Policy::RoundRobin, 500)
+                .is_none()
+        );
         assert_eq!(s.soonest_reset(500), Some(1000));
     }
 

@@ -358,10 +358,7 @@ mod tests {
             keys.push(KeyEntry {
                 label: l.into(),
                 key: "k".into(),
-                cooling_until: None,
-                cooling_since: None,
-                last_error: None,
-                added_at: None,
+                ..Default::default()
             });
         }
         let sky = render_sky(&keys, Some("a"), 0, 1.0);

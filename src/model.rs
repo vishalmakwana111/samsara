@@ -14,13 +14,45 @@ pub fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// One Zen API key in samsara's pool.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Which upstream provider a key authenticates to (maps to an auth.json entry).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    #[default]
+    Opencode,
+    Openrouter,
+    Anthropic,
+}
+
+impl Provider {
+    /// The auth.json provider id this maps to.
+    pub fn auth_id(&self) -> &'static str {
+        match self {
+            Provider::Opencode => "opencode",
+            Provider::Openrouter => "openrouter",
+            Provider::Anthropic => "anthropic",
+        }
+    }
+    pub fn parse(s: &str) -> Option<Provider> {
+        match s.to_lowercase().as_str() {
+            "opencode" | "zen" => Some(Provider::Opencode),
+            "openrouter" => Some(Provider::Openrouter),
+            "anthropic" => Some(Provider::Anthropic),
+            _ => None,
+        }
+    }
+}
+
+/// One API key in samsara's pool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct KeyEntry {
     /// Human label the user assigns (e.g. "work", "personal").
     pub label: String,
-    /// The raw Zen API key.
+    /// The raw API key.
     pub key: String,
+    /// Which provider this key is for (defaults to opencode Zen).
+    #[serde(default)]
+    pub provider: Provider,
     /// Unix seconds until which this key is cooling down after hitting its limit.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cooling_until: Option<u64>,
@@ -33,6 +65,24 @@ pub struct KeyEntry {
     /// Unix seconds when the key was added.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub added_at: Option<u64>,
+    /// Workspace id (if discovered), used to warn about same-workspace duplicates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub workspace: Option<String>,
+    /// Excluded from rotation while true.
+    #[serde(default)]
+    pub disabled: bool,
+    /// Preferred over unpinned keys when selecting the next key.
+    #[serde(default)]
+    pub pinned: bool,
+    /// Higher priority is chosen first (ties broken by least-recently-active).
+    #[serde(default)]
+    pub priority: i32,
+    /// Unix seconds this key was last made active.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_active: Option<u64>,
+    /// How many times this key has hit its limit.
+    #[serde(default)]
+    pub limit_hits: u32,
 }
 
 impl KeyEntry {
@@ -90,10 +140,7 @@ mod tests {
         let mut k = KeyEntry {
             label: "a".into(),
             key: "sk-1234567890abcdef".into(),
-            cooling_until: None,
-            cooling_since: None,
-            last_error: None,
-            added_at: None,
+            ..Default::default()
         };
         assert!(!k.is_cooling(100));
         assert_eq!(k.cooldown_remaining(100), 0);
