@@ -12,7 +12,8 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "samsara",
     about = "Auto-rotating opencode Zen API-key supervisor",
-    version
+    version,
+    arg_required_else_help = true
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -161,11 +162,11 @@ fn cmd_list() -> Result<()> {
     if store.keys.is_empty() {
         println!(
             "{}",
-            ui::mark(
-                ui::ASH,
-                "·",
-                "the sky is empty — add a star with `samsara add <key> --label <name>`"
-            )
+            ui::empty_sky(&[
+                "no stars yet.",
+                "kindle your first:",
+                "samsara add <key> --label <name>",
+            ])
         );
         return Ok(());
     }
@@ -183,7 +184,7 @@ fn cmd_status() -> Result<()> {
     if store.keys.is_empty() {
         println!(
             "{}",
-            ui::mark(ui::ASH, "·", "no keys yet — `samsara add <key>`")
+            ui::empty_sky(&["no stars yet.", "kindle your first:", "samsara add <key>"])
         );
     } else {
         println!(

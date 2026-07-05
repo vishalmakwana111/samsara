@@ -5,6 +5,15 @@ All notable changes to samsara are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.1]
+
+### Added
+- Branded `--help`: a starfield banner, samsara-palette section colors, and a themed
+  examples footer with the star legend.
+- "Empty sky" rendering for `list`/`status` when no keys are configured (replaces the plain
+  one-line hint).
+- Bare `samsara` now shows the full branded help.
+
 ## [0.1.0]
 
 Initial release.
@@ -22,5 +31,6 @@ Initial release.
 - One-click `install.sh`, CI (fmt/clippy/test on Linux + macOS), and tag-driven release
   binaries for macOS (arm64/x64) and Linux (arm64/x64, musl-static).
 
-[Unreleased]: https://github.com/vishalmakwana111/samsara/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vishalmakwana111/samsara/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/vishalmakwana111/samsara/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vishalmakwana111/samsara/releases/tag/v0.1.0

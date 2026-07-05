@@ -11,7 +11,7 @@ mod rotor;
 mod ui;
 mod watcher;
 
-use clap::Parser;
+use clap::{CommandFactory, FromArgMatches};
 
 #[tokio::main]
 async fn main() -> std::process::ExitCode {
@@ -23,7 +23,17 @@ async fn main() -> std::process::ExitCode {
         .with_target(false)
         .init();
 
-    let cli = cli::Cli::parse();
+    // Build the command with a starfield banner, themed colors, and an example
+    // footer, then parse — so `--help` and bare `samsara` feel like the constellation.
+    let command = cli::Cli::command()
+        .styles(ui::clap_styles())
+        .before_help(ui::banner())
+        .after_help(ui::help_footer());
+    let cli = match cli::Cli::from_arg_matches_mut(&mut command.get_matches()) {
+        Ok(cli) => cli,
+        Err(e) => e.exit(),
+    };
+
     match cli::run(cli).await {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {

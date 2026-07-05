@@ -22,6 +22,17 @@ pub const CYAN: Rgb = (120, 200, 220);
 pub const EMBER: Rgb = (232, 120, 92);
 pub const WHITE: Rgb = (235, 236, 245);
 
+/// clap help styling in the samsara palette (section headers, usage, flags).
+pub fn clap_styles() -> clap::builder::Styles {
+    use clap::builder::styling::{Color, RgbColor, Style, Styles};
+    let fg = |c: Rgb| Style::new().fg_color(Some(Color::from(RgbColor(c.0, c.1, c.2))));
+    Styles::styled()
+        .header(fg(GOLD).bold())
+        .usage(fg(SAFFRON).bold())
+        .literal(fg(GREEN))
+        .placeholder(fg(VIOLET))
+}
+
 pub fn color_enabled() -> bool {
     static E: OnceLock<bool> = OnceLock::new();
     *E.get_or_init(|| {
@@ -197,6 +208,93 @@ pub fn constellation(keys: &[KeyEntry], active: Option<&str>, pulse: f32) -> Str
 /// Compact one-line mark for command confirmations.
 pub fn mark(glyph_color: Rgb, glyph: &str, msg: &str) -> String {
     format!("  {} {}", paint_bold(glyph_color, glyph), msg)
+}
+
+/// A small starfield + wordmark banner, shown atop `--help` and bare `samsara`.
+pub fn banner() -> String {
+    let word = ["s", "a", "m", "s", "a", "r", "a"]
+        .iter()
+        .map(|c| paint_bold(GOLD, c))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let l1 = format!(
+        "    {}      {}          {}",
+        paint(VIOLET, "✦"),
+        paint(FAINT, "·"),
+        paint(CYAN, "✧")
+    );
+    let l2 = format!(
+        "  {}     {}   {}   {}",
+        paint(FAINT, "·"),
+        paint_bold(GOLD, "◉"),
+        word,
+        paint(GREEN, "✦")
+    );
+    let l3 = format!(
+        "       {}      {}      {}",
+        paint(CYAN, "✦"),
+        paint(FAINT, "·"),
+        paint(ASH, "auto-rotating Zen keys · the wheel of keys turns")
+    );
+    format!("\n{l1}\n{l2}\n{l3}\n")
+}
+
+/// Themed example/footer block for `--help`.
+pub fn help_footer() -> String {
+    let cmd = |s: &str| paint(GREEN, s);
+    let note = |s: &str| paint(ASH, s);
+    format!(
+        "{}\n  {}   {}\n  {}                {}\n  {}                          {}\n\n  {} {}   {} {}   {} {}\n",
+        paint_bold(GOLD, "Examples"),
+        cmd("samsara add sk-zen-… --label work"),
+        note("add your first star"),
+        cmd("samsara daemon"),
+        note("watch & auto-rotate on limit"),
+        cmd("bash demo-sky.sh"),
+        note("preview the night sky"),
+        paint_bold(GOLD, "✦"),
+        note("active"),
+        paint(GREEN, "✦"),
+        note("ready"),
+        paint(CYAN, "✦"),
+        note("cooling → reborn on reset"),
+    )
+}
+
+/// A faint empty night sky with a hint — used when there are no keys yet.
+pub fn empty_sky(hint: &[&str]) -> String {
+    let dust = [
+        format!(
+            "   {}      {}        {}",
+            paint(FAINT, "·"),
+            paint(FAINT, "·"),
+            paint(VIOLET, "✧")
+        ),
+        format!(
+            " {}        {}            {}",
+            paint(VIOLET, "✦"),
+            paint(FAINT, "·"),
+            paint(FAINT, "·")
+        ),
+        format!(
+            "      {}         {}    {}",
+            paint(FAINT, "·"),
+            paint(FAINT, "·"),
+            paint(FAINT, "·")
+        ),
+    ];
+    let title = format!(
+        "  {} {}",
+        paint_bold(GOLD, "✦"),
+        paint(ASH, "samsara · an empty sky")
+    );
+    let mut out = vec![String::new(), title, String::new()];
+    for (i, line) in dust.iter().enumerate() {
+        let hint_line = hint.get(i).map(|h| paint(ASH, h)).unwrap_or_default();
+        out.push(format!("{line}     {hint_line}"));
+    }
+    out.push(String::new());
+    out.join("\n")
 }
 
 /// A comet streaking from a burned-out star to the one reborn as active.
