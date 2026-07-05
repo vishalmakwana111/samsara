@@ -118,7 +118,18 @@ pub async fn run() -> Result<()> {
             );
             continue;
         }
-        match zen::validate(&k.key).await {
+        let secret = match crate::secrets::resolve(&k.key) {
+            Ok(s) => s,
+            Err(e) => {
+                line(
+                    Level::Warn,
+                    &format!("{}: could not read secret ({e})", k.label),
+                );
+                bump(Level::Warn);
+                continue;
+            }
+        };
+        match zen::validate(&secret).await {
             zen::Validity::Ok { models } => {
                 line(Level::Ok, &format!("{}: valid ({models} models)", k.label))
             }

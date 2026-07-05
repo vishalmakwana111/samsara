@@ -12,6 +12,7 @@ mod model;
 mod notify;
 mod paths;
 mod rotor;
+mod secrets;
 mod service;
 mod ui;
 mod update;

@@ -77,7 +77,8 @@ pub fn rotate(store: &mut KeyStore, hit: &LimitHit, default_cooldown: Duration) 
     match &outcome {
         Outcome::Switched { from, to } => {
             if let Some(entry) = store.find(to) {
-                authfile::set_key(entry.provider.auth_id(), &entry.key)?;
+                let secret = crate::secrets::resolve(&entry.key)?;
+                authfile::set_key(entry.provider.auth_id(), &secret)?;
             }
             crate::history::append(
                 &crate::history::Event::new("rotate")

@@ -34,6 +34,9 @@ pub struct Settings {
     /// POST a JSON payload to this URL on rotation / exhaustion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notify_webhook: Option<String>,
+    /// Store key secrets in the OS keychain instead of plaintext keys.json.
+    #[serde(default)]
+    pub keychain: bool,
 }
 
 impl Default for Settings {
@@ -43,6 +46,7 @@ impl Default for Settings {
             policy: Policy::default(),
             notify_banner: false,
             notify_webhook: None,
+            keychain: false,
         }
     }
 }

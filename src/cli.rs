@@ -3,9 +3,19 @@
 use crate::config::{Policy, Settings};
 use crate::keystore::KeyStore;
 use crate::model::{Provider, now_secs};
-use crate::{authfile, history, local, ui, zen};
+use crate::{authfile, history, local, secrets, ui, zen};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+
+#[derive(Subcommand, Debug)]
+pub enum SecureAction {
+    /// Move all key secrets into the OS keychain.
+    Enable,
+    /// Move all key secrets back to plaintext keys.json (0600).
+    Disable,
+    /// Show the current secret-storage backend.
+    Status,
+}
 
 #[derive(Parser, Debug)]
 #[command(
@@ -100,6 +110,11 @@ pub enum Command {
         #[command(subcommand)]
         action: crate::service::ServiceAction,
     },
+    /// Move key secrets into / out of the OS keychain.
+    Secure {
+        #[command(subcommand)]
+        action: SecureAction,
+    },
     /// Live full-screen dashboard of the constellation.
     Watch,
     /// Run the supervisor: watch for limit hits and auto-rotate.
@@ -146,6 +161,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         } => cmd_config(cooldown, policy, banner, webhook, clear_webhook),
         Command::Update { force } => crate::update::run(force).await,
         Command::Service { action } => crate::service::run(action),
+        Command::Secure { action } => cmd_secure(action),
         Command::Watch => crate::watcher::watch().await,
         Command::Daemon {
             default_cooldown,
@@ -167,8 +183,81 @@ pub async fn run(cli: Cli) -> Result<()> {
 /// Write the store's active key into opencode's auth.json (best-effort sync).
 fn sync_active_to_authfile(store: &KeyStore) -> Result<()> {
     if let Some(entry) = store.active_entry() {
-        authfile::set_key(entry.provider.auth_id(), &entry.key)
+        let secret = secrets::resolve(&entry.key)?;
+        authfile::set_key(entry.provider.auth_id(), &secret)
             .context("writing active key to auth.json")?;
+    }
+    Ok(())
+}
+
+fn cmd_secure(action: SecureAction) -> Result<()> {
+    anyhow::ensure!(
+        secrets::available(),
+        "keychain storage is only available on macOS"
+    );
+    let mut store = KeyStore::load()?;
+    let mut settings = Settings::load()?;
+    match action {
+        SecureAction::Enable => {
+            for k in &mut store.keys {
+                if !secrets::is_reference(&k.key) {
+                    secrets::set(&k.label, &k.key)?;
+                    k.key = secrets::reference(&k.label);
+                }
+            }
+            store.save()?;
+            settings.keychain = true;
+            settings.save()?;
+            println!(
+                "{}",
+                ui::mark(ui::GREEN, "✦", "keys moved into the OS keychain")
+            );
+        }
+        SecureAction::Disable => {
+            for k in &mut store.keys {
+                if secrets::is_reference(&k.key) {
+                    let real = secrets::resolve(&k.key)?;
+                    let label = k.label.clone();
+                    k.key = real;
+                    secrets::delete(&label)?;
+                }
+            }
+            store.save()?;
+            settings.keychain = false;
+            settings.save()?;
+            println!(
+                "{}",
+                ui::mark(
+                    ui::GOLD,
+                    "✧",
+                    "keys moved back to plaintext keys.json (0600)"
+                )
+            );
+        }
+        SecureAction::Status => {
+            let refs = store
+                .keys
+                .iter()
+                .filter(|k| secrets::is_reference(&k.key))
+                .count();
+            let backend = if settings.keychain {
+                "keychain"
+            } else {
+                "plaintext (0600)"
+            };
+            println!(
+                "{}",
+                ui::mark(ui::VIOLET, "✦", &format!("backend: {backend}"))
+            );
+            println!(
+                "{}",
+                ui::mark(
+                    ui::ASH,
+                    "·",
+                    &format!("{refs}/{} keys stored in the keychain", store.keys.len())
+                )
+            );
+        }
     }
     Ok(())
 }
@@ -354,21 +443,28 @@ fn cmd_status() -> Result<()> {
     };
 
     let live = authfile::read_zen_key().unwrap_or(None);
+    let active_secret = store
+        .active_entry()
+        .and_then(|a| secrets::resolve(&a.key).ok());
     dim(
         "auth.json",
-        match (&live, store.active_entry()) {
-            (Some(lk), Some(a)) if *lk == a.key => {
+        match (
+            &live,
+            active_secret.as_deref(),
+            store.active_entry().is_some(),
+        ) {
+            (Some(lk), Some(ak), _) if lk == ak => {
                 ui::paint(ui::GREEN, "in sync with the active star")
             }
-            (Some(_), Some(_)) => ui::paint(
+            (Some(_), _, true) => ui::paint(
                 ui::EMBER,
                 &format!(
                     "out of sync — run `samsara switch {}`",
                     store.active.as_deref().unwrap_or("")
                 ),
             ),
-            (Some(_), None) => ui::paint(ui::ASH, "has a Zen key, but no active star"),
-            (None, _) => ui::paint(ui::ASH, "no Zen key set"),
+            (Some(_), _, false) => ui::paint(ui::ASH, "has a Zen key, but no active star"),
+            (None, _, _) => ui::paint(ui::ASH, "no Zen key set"),
         },
     );
 
