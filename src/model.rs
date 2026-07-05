@@ -83,6 +83,22 @@ pub struct KeyEntry {
     /// How many times this key has hit its limit.
     #[serde(default)]
     pub limit_hits: u32,
+    // ---- usage / intelligence ----
+    /// How many times this key has been made the active key.
+    #[serde(default)]
+    pub activations: u32,
+    /// Accumulated wall-clock seconds this key has spent as the active key.
+    #[serde(default)]
+    pub active_secs: u64,
+    /// opencode events observed while this key was active (activity proxy).
+    #[serde(default)]
+    pub events_seen: u64,
+    /// Unix seconds this key was first used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_used: Option<u64>,
+    /// Longest reset window (seconds) observed for this key, learned from `retry-after`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub learned_cooldown_secs: Option<u64>,
 }
 
 impl KeyEntry {
@@ -115,6 +131,23 @@ impl KeyEntry {
     #[allow(dead_code)]
     pub fn masked(&self) -> String {
         mask_secret(&self.key)
+    }
+
+    /// Activity rate: events observed per hour of active time (None if never active).
+    pub fn burn_rate_per_hour(&self) -> Option<f64> {
+        if self.active_secs == 0 {
+            return None;
+        }
+        Some(self.events_seen as f64 / (self.active_secs as f64 / 3600.0))
+    }
+
+    /// Average active time (seconds) between limit hits — a rough "how long until the
+    /// next limit" estimate (None until the key has hit at least one limit).
+    pub fn avg_active_per_limit(&self) -> Option<u64> {
+        if self.limit_hits == 0 {
+            return None;
+        }
+        Some(self.active_secs / self.limit_hits as u64)
     }
 }
 

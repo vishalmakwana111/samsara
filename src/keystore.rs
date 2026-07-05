@@ -106,11 +106,31 @@ impl KeyStore {
         Ok(())
     }
 
-    /// Make `label` the active key and stamp its last-active time.
+    /// Make `label` the active key and stamp its usage timestamps/counters.
     pub fn make_active(&mut self, label: &str) {
         self.active = Some(label.to_string());
+        let now = now_secs();
         if let Some(e) = self.find_mut(label) {
-            e.last_active = Some(now_secs());
+            e.last_active = Some(now);
+            e.activations = e.activations.saturating_add(1);
+            e.first_used.get_or_insert(now);
+        }
+    }
+
+    /// Accumulate usage onto a key: `secs` of active time and `events` observed.
+    pub fn add_usage(&mut self, label: &str, secs: u64, events: u64) {
+        if let Some(e) = self.find_mut(label) {
+            e.active_secs = e.active_secs.saturating_add(secs);
+            e.events_seen = e.events_seen.saturating_add(events);
+            e.first_used.get_or_insert(now_secs());
+        }
+    }
+
+    /// Record an observed reset window (`retry-after`) to learn the key's cooldown.
+    pub fn record_retry_after(&mut self, label: &str, secs: u64) {
+        if let Some(e) = self.find_mut(label) {
+            e.learned_cooldown_secs =
+                Some(e.learned_cooldown_secs.map_or(secs, |cur| cur.max(secs)));
         }
     }
 

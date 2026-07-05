@@ -95,7 +95,10 @@ your normal `opencode` usage.
 - **Notifications:** desktop banner and/or webhook on rotation & exhaustion (`samsara config`).
 - **Security:** opt-in macOS Keychain storage (`samsara secure enable`); plaintext `0600` otherwise.
 - **Multi-provider:** `--provider opencode|openrouter|anthropic` — swaps the matching auth.json entry.
-- **Insight:** `samsara stats` and `samsara history` (a JSONL rotation log).
+- **Insight:** `samsara stats` shows per-key usage — active time, activity/**burn rate**,
+  activations, limit-hits, and a **learned cooldown** (samsara learns each account's real reset
+  window from observed `retry-after`, and uses it as the fallback). `samsara history` is a JSONL
+  rotation log.
 
 ## Updating
 

@@ -584,22 +584,31 @@ fn cmd_stats() -> Result<()> {
         return Ok(());
     }
     let now = now_secs();
-    println!("\n  {}", ui::paint_bold(ui::GOLD, "✦ per-star stats"));
+    println!("\n  {}", ui::paint_bold(ui::GOLD, "✦ per-star usage"));
     println!(
         "  {}",
         ui::paint(
             ui::ASH,
             &format!(
-                "{:<12} {:<10} {:<8} {:<10} {}",
-                "LABEL", "PROVIDER", "HITS", "PRIORITY", "LAST ACTIVE"
+                "{:<12} {:<6} {:<5} {:<9} {:<7} {:<8} {:<8} {}",
+                "LABEL", "HITS", "ACT", "ACTIVE", "EVENTS", "BURN/h", "COOLDOWN", "FLAGS"
             )
         )
     );
     for k in &store.keys {
-        let last = k
-            .last_active
-            .map(|t| format!("{} ago", ui::fmt_dur(now.saturating_sub(t))))
-            .unwrap_or_else(|| "never".into());
+        let active_t = if k.active_secs == 0 {
+            "—".into()
+        } else {
+            ui::fmt_dur(k.active_secs)
+        };
+        let burn = k
+            .burn_rate_per_hour()
+            .map(|r| format!("{r:.0}"))
+            .unwrap_or_else(|| "—".into());
+        let cooldown = k
+            .learned_cooldown_secs
+            .map(|s| format!("~{}", ui::fmt_dur(s)))
+            .unwrap_or_else(|| "—".into());
         let flags = [
             if store.active.as_deref() == Some(&k.label) {
                 "active"
@@ -608,21 +617,52 @@ fn cmd_stats() -> Result<()> {
             },
             if k.pinned { "pinned" } else { "" },
             if k.disabled { "disabled" } else { "" },
+            if k.is_cooling(now) { "cooling" } else { "" },
         ]
         .into_iter()
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(",");
         println!(
-            "  {:<12} {:<10} {:<8} {:<10} {} {}",
+            "  {:<12} {:<6} {:<5} {:<9} {:<7} {:<8} {:<8} {}",
             k.label,
-            k.provider.auth_id(),
             k.limit_hits,
-            k.priority,
-            last,
+            k.activations,
+            active_t,
+            k.events_seen,
+            burn,
+            cooldown,
             ui::paint(ui::CYAN, &flags)
         );
     }
+
+    // learned estimates
+    let estimates: Vec<String> = store
+        .keys
+        .iter()
+        .filter_map(|k| {
+            k.avg_active_per_limit().map(|s| {
+                format!(
+                    "{} lasts ~{} active between limits",
+                    k.label,
+                    ui::fmt_dur(s)
+                )
+            })
+        })
+        .collect();
+    if !estimates.is_empty() {
+        println!("\n  {}", ui::paint_bold(ui::GOLD, "✦ learned"));
+        for e in estimates {
+            println!("  {}", ui::paint(ui::ASH, &format!("· {e}")));
+        }
+    }
+    println!(
+        "\n  {}",
+        ui::paint(
+            ui::ASH,
+            "ACT = activations · BURN/h = events per active hour · COOLDOWN = learned reset window"
+        )
+    );
     println!();
     Ok(())
 }

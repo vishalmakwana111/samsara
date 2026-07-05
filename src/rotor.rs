@@ -29,12 +29,6 @@ pub enum Outcome {
     Empty,
 }
 
-/// Compute the cooldown-until timestamp for a limit hit.
-pub fn cooldown_until(now: u64, hit: &LimitHit, default_cooldown: Duration) -> u64 {
-    let secs = hit.retry_after_secs.unwrap_or(default_cooldown.as_secs());
-    now.saturating_add(secs)
-}
-
 /// Apply the rotation decision to the store (pure: no I/O). Marks the active key
 /// cooling and moves `active` to the next available key. Returns the outcome.
 pub fn decide(
@@ -49,7 +43,16 @@ pub fn decide(
     }
     let from = store.active.clone();
     if let Some(active) = from.clone() {
-        let until = cooldown_until(now, hit, default_cooldown);
+        if let Some(r) = hit.retry_after_secs {
+            store.record_retry_after(&active, r);
+        }
+        // cooldown = server retry-after → else this key's learned window → else the default
+        let learned = store.find(&active).and_then(|k| k.learned_cooldown_secs);
+        let secs = hit
+            .retry_after_secs
+            .or(learned)
+            .unwrap_or(default_cooldown.as_secs());
+        let until = now.saturating_add(secs);
         let _ = store.set_cooldown(&active, until, Some(hit.message.clone()));
     }
 

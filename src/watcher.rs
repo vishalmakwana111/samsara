@@ -60,11 +60,22 @@ pub async fn run(
 
     let client = reqwest::Client::new();
     let mut backoff = Duration::from_secs(1);
+    let mut usage = Usage::new(KeyStore::load().ok().and_then(|s| s.active));
 
     loop {
-        match connect_and_watch(&client, dir.as_deref(), default_cooldown, debug_events).await {
+        let result = connect_and_watch(
+            &client,
+            dir.as_deref(),
+            default_cooldown,
+            debug_events,
+            &mut usage,
+        )
+        .await;
+        // Persist accumulated usage before we (possibly) idle in reconnect backoff, so
+        // downtime isn't counted as active time.
+        usage.flush();
+        match result {
             Ok(()) => {
-                // Stream ended cleanly (e.g. server restarted after our own rotation).
                 backoff = Duration::from_secs(1);
                 tracing::info!("event stream ended; reconnecting…");
             }
@@ -80,11 +91,60 @@ pub async fn run(
     }
 }
 
+/// In-memory accumulator for per-key usage; flushed into the keystore periodically and on
+/// rotation so `active_secs` / `events_seen` reflect real usage.
+struct Usage {
+    label: Option<String>,
+    since: u64,
+    events: u64,
+    last_flush: u64,
+}
+
+impl Usage {
+    fn new(label: Option<String>) -> Self {
+        let n = now_secs();
+        Usage {
+            label,
+            since: n,
+            events: 0,
+            last_flush: n,
+        }
+    }
+    fn note_event(&mut self) {
+        self.events += 1;
+        if now_secs().saturating_sub(self.last_flush) >= 30 {
+            self.flush();
+        }
+    }
+    fn flush(&mut self) {
+        let now = now_secs();
+        let secs = now.saturating_sub(self.since);
+        if let Some(l) = self.label.clone()
+            && (secs > 0 || self.events > 0)
+            && let Ok(mut s) = KeyStore::load()
+        {
+            s.add_usage(&l, secs, self.events);
+            let _ = s.save();
+        }
+        self.since = now;
+        self.events = 0;
+        self.last_flush = now;
+    }
+    fn relabel(&mut self, label: Option<String>) {
+        let now = now_secs();
+        self.label = label;
+        self.since = now;
+        self.events = 0;
+        self.last_flush = now;
+    }
+}
+
 async fn connect_and_watch(
     client: &reqwest::Client,
     dir: Option<&str>,
     default_cooldown: Duration,
     debug_events: bool,
+    usage: &mut Usage,
 ) -> Result<()> {
     let reg = local::registration()?
         .filter(|r| local::pid_alive(r.pid))
@@ -112,12 +172,15 @@ async fn connect_and_watch(
             println!("event[{}]: {}", event.event, event.data);
             continue;
         }
+        usage.note_event();
         let Ok(json) = serde_json::from_str::<Value>(&event.data) else {
             continue;
         };
         if let Some(mut hit) = detect_limit(&json).or_else(|| detect_hard_limit(&json)) {
             hit.session = find_session_id(&json);
+            usage.flush(); // count the burned key's active time up to the limit
             handle_hit(hit, default_cooldown).await?;
+            usage.relabel(KeyStore::load().ok().and_then(|s| s.active));
             // After rotating we SIGTERM the server; the stream will drop and we reconnect.
         }
     }
