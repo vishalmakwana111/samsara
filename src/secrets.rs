@@ -4,7 +4,9 @@
 //! and the secret lives in the macOS Keychain (via the `security` CLI). `resolve()` turns a
 //! stored value back into the real secret. Plaintext (0600) remains the default.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
+#[cfg(target_os = "macos")]
+use anyhow::Context;
 
 const SENTINEL: &str = "keychain:";
 #[cfg(target_os = "macos")]
