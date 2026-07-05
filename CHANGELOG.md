@@ -5,6 +5,25 @@ All notable changes to samsara are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.2.0]
+
+### Added
+- `samsara doctor` — live preflight self-check (validates each key against Zen; flags
+  `OPENCODE_API_KEY` overrides, duplicate keys, auth.json drift, opencode down).
+- `add` now validates the key against the provider and supports `--stdin`, `--provider`, and
+  `--no-verify`; duplicate keys are rejected.
+- Rotation policy (`round-robin` | `priority`) with `pin`/`unpin`, `disable`/`enable`,
+  `priority` commands.
+- `samsara stats` and `samsara history` (JSONL rotation log).
+- `samsara config` — cooldown, policy, notifications.
+- Notifications on rotation/exhaustion: desktop banner (macOS/Linux) + webhook.
+- `samsara service install/uninstall/status` — launchd (macOS) / systemd --user (Linux),
+  plus a daemon PID file, single-instance guard, and `status` daemon detection.
+- `samsara secure enable/disable/status` — optional macOS Keychain storage for secrets.
+- `samsara watch` — live full-screen constellation dashboard.
+- Multi-provider keys (`opencode` | `openrouter` | `anthropic`) mapping to the right auth.json entry.
+- Fallback detection of hard credit/monthly limits; the affected session id is surfaced.
+
 ## [0.1.2]
 
 ### Added
@@ -37,7 +56,8 @@ Initial release.
 - One-click `install.sh`, CI (fmt/clippy/test on Linux + macOS), and tag-driven release
   binaries for macOS (arm64/x64) and Linux (arm64/x64, musl-static).
 
-[Unreleased]: https://github.com/vishalmakwana111/samsara/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/vishalmakwana111/samsara/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/vishalmakwana111/samsara/compare/v0.1.2...v0.2.0
 [0.1.2]: https://github.com/vishalmakwana111/samsara/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/vishalmakwana111/samsara/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vishalmakwana111/samsara/releases/tag/v0.1.0

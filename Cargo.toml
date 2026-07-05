@@ -1,6 +1,6 @@
 [package]
 name = "samsara"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 description = "Auto-rotating opencode Zen API-key supervisor — swaps keys when one hits its usage limit."
 authors = ["Vishal Makwana"]
