@@ -8,12 +8,14 @@ use anyhow::Result;
 use std::time::Duration;
 
 /// A detected usage-limit event for the currently-active account.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct LimitHit {
     /// Seconds until the account's limit resets, if the server told us.
     pub retry_after_secs: Option<u64>,
     /// Human-readable reason/message (for logging + last_error).
     pub message: String,
+    /// The opencode session that hit the limit, if we could identify it.
+    pub session: Option<String>,
 }
 
 /// What happened when we tried to rotate.
@@ -117,6 +119,7 @@ mod tests {
         let hit = LimitHit {
             retry_after_secs: Some(3600),
             message: "12h limit".into(),
+            session: None,
         };
         let outcome = decide(
             &mut s,
@@ -142,6 +145,7 @@ mod tests {
         let hit = LimitHit {
             retry_after_secs: None,
             message: "limit".into(),
+            session: None,
         };
         decide(
             &mut s,
@@ -160,6 +164,7 @@ mod tests {
         let hit = LimitHit {
             retry_after_secs: Some(1000),
             message: "limit".into(),
+            session: None,
         };
         // active a gets cooled to 2000; b cools to 5000 → all cooling, soonest = 2000
         let outcome = decide(
@@ -178,6 +183,7 @@ mod tests {
         let hit = LimitHit {
             retry_after_secs: None,
             message: "x".into(),
+            session: None,
         };
         assert_eq!(
             decide(

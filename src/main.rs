@@ -9,6 +9,7 @@ mod history;
 mod keystore;
 mod local;
 mod model;
+mod notify;
 mod paths;
 mod rotor;
 mod service;

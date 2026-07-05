@@ -115,7 +115,8 @@ async fn connect_and_watch(
         let Ok(json) = serde_json::from_str::<Value>(&event.data) else {
             continue;
         };
-        if let Some(hit) = detect_limit(&json) {
+        if let Some(mut hit) = detect_limit(&json).or_else(|| detect_hard_limit(&json)) {
+            hit.session = find_session_id(&json);
             handle_hit(hit, default_cooldown).await?;
             // After rotating we SIGTERM the server; the stream will drop and we reconnect.
         }
@@ -131,9 +132,16 @@ async fn handle_hit(hit: LimitHit, default_cooldown: Duration) -> Result<()> {
         hit.message,
         hit.retry_after_secs
     );
+    let session = hit.session.clone();
     match rotor::rotate(&mut store, &hit, default_cooldown)? {
         rotor::Outcome::Switched { from, to } => {
             println!("{}", crate::ui::comet(from.as_deref().unwrap_or("?"), &to));
+            crate::notify::rotation(from.as_deref(), &to).await;
+            if let Some(sid) = session {
+                tracing::info!(
+                    "session {sid} will continue on '{to}' at opencode's next interaction"
+                );
+            }
         }
         rotor::Outcome::AllCooling { resume_at } => {
             let wait = resume_at.saturating_sub(now_secs());
@@ -148,6 +156,7 @@ async fn handle_hit(hit: LimitHit, default_cooldown: Duration) -> Result<()> {
                     )
                 )
             );
+            crate::notify::exhausted(wait).await;
         }
         rotor::Outcome::Empty => tracing::error!("no keys in pool"),
     }
@@ -245,6 +254,44 @@ async fn watch_loop() -> Result<()> {
     }
 }
 
+/// Hard-limit markers Zen uses for credit/monthly exhaustion (often surfaced as 401),
+/// caught as a fallback when there's no retryable `account_rate_limit` action.
+const HARD_MARKERS: [&str; 5] = [
+    "GoUsageLimitError",
+    "BlackUsageLimitError",
+    "MonthlyLimitError",
+    "insufficient_quota",
+    "quota_exceeded",
+];
+
+/// Fallback detector: if the event mentions a hard usage/credit limit anywhere, treat it as
+/// a limit hit (no retry-after → default cooldown applies).
+fn detect_hard_limit(value: &Value) -> Option<LimitHit> {
+    let blob = value.to_string();
+    let marker = HARD_MARKERS.iter().find(|m| blob.contains(**m))?;
+    Some(LimitHit {
+        retry_after_secs: None,
+        message: format!("{marker} (hard limit)"),
+        session: None,
+    })
+}
+
+/// Recursively find a session id under a `sessionID` / `session_id` / `session` string field.
+fn find_session_id(value: &Value) -> Option<String> {
+    match value {
+        Value::Object(obj) => {
+            for key in ["sessionID", "session_id", "sessionId"] {
+                if let Some(s) = obj.get(key).and_then(|v| v.as_str()) {
+                    return Some(s.to_string());
+                }
+            }
+            obj.values().find_map(find_session_id)
+        }
+        Value::Array(arr) => arr.iter().find_map(find_session_id),
+        _ => None,
+    }
+}
+
 /// Recursively search an event payload for the retry/limit marker and extract a `LimitHit`.
 /// Matches an object carrying `action.reason ∈ RETRY_REASONS` (optionally under `type:"retry"`),
 /// reading a human message and deriving `retry_after` from an absolute `next` (ms) when present.
@@ -281,6 +328,7 @@ fn detect_limit(value: &Value) -> Option<LimitHit> {
                 return Some(LimitHit {
                     retry_after_secs,
                     message,
+                    session: None,
                 });
             }
             obj.values().find_map(detect_limit)
