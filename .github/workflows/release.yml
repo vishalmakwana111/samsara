@@ -8,8 +8,26 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: create release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Create the GitHub Release for this tag up front so the parallel build
+      # jobs have something to upload into (idempotent — no-op if it exists).
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1 \
+            || gh release create "${GITHUB_REF_NAME}" \
+                 --repo "${GITHUB_REPOSITORY}" \
+                 --title "samsara ${GITHUB_REF_NAME}" \
+                 --generate-notes
+
   build:
     name: ${{ matrix.target }}
+    needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,9 +47,8 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      # Build the binary for the target, package it as
-      # samsara-<target>.tar.gz (+ .sha256), and upload it to the release
-      # for this tag. Handles cross-compilation (e.g. aarch64 linux) via `cross`.
+      # Build for the target, package as samsara-<target>.tar.gz (+ .sha256),
+      # and upload to the release created above. Handles cross-compilation.
       - name: Build & upload
         uses: taiki-e/upload-rust-binary-action@v1
         with:
