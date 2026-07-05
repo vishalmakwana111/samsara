@@ -5,6 +5,12 @@ All notable changes to samsara are documented here. Format loosely follows
 
 ## [Unreleased]
 
+## [0.1.2]
+
+### Added
+- `samsara update` — self-update to the latest release: downloads the platform binary,
+  verifies its SHA-256, and atomically replaces the running executable (`--force` to reinstall).
+
 ## [0.1.1]
 
 ### Added
@@ -31,6 +37,7 @@ Initial release.
 - One-click `install.sh`, CI (fmt/clippy/test on Linux + macOS), and tag-driven release
   binaries for macOS (arm64/x64) and Linux (arm64/x64, musl-static).
 
-[Unreleased]: https://github.com/vishalmakwana111/samsara/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/vishalmakwana111/samsara/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/vishalmakwana111/samsara/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/vishalmakwana111/samsara/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/vishalmakwana111/samsara/releases/tag/v0.1.0

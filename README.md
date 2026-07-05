@@ -71,8 +71,21 @@ your normal `opencode` usage.
 | `samsara list` | Render the constellation of keys |
 | `samsara status` | Active key, live server, cooldowns + override warnings |
 | `samsara switch <label>` | Manually activate a key (swap + reload opencode) |
+| `samsara update [--force]` | Self-update to the latest release |
 | `samsara daemon [--default-cooldown 12h] [--dir <path>]` | Run the supervisor |
 | `samsara daemon --debug-events` | Print raw opencode SSE events (no rotation) |
+
+## Updating
+
+Once installed, upgrading is one command:
+
+```sh
+samsara update
+```
+
+It checks the latest release, downloads the binary for your platform, verifies its SHA-256,
+and atomically replaces itself. (If samsara is installed somewhere that needs root, re-run the
+`install.sh` one-liner with `sudo` instead.)
 
 ## How it works
 

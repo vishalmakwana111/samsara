@@ -244,12 +244,14 @@ pub fn help_footer() -> String {
     let cmd = |s: &str| paint(GREEN, s);
     let note = |s: &str| paint(ASH, s);
     format!(
-        "{}\n  {}   {}\n  {}                {}\n  {}                          {}\n\n  {} {}   {} {}   {} {}\n",
+        "{}\n  {}   {}\n  {}                {}\n  {}                        {}\n  {}                          {}\n\n  {} {}   {} {}   {} {}\n",
         paint_bold(GOLD, "Examples"),
         cmd("samsara add sk-zen-… --label work"),
         note("add your first star"),
         cmd("samsara daemon"),
         note("watch & auto-rotate on limit"),
+        cmd("samsara update"),
+        note("self-update to the latest release"),
         cmd("bash demo-sky.sh"),
         note("preview the night sky"),
         paint_bold(GOLD, "✦"),

@@ -44,6 +44,12 @@ pub enum Command {
         /// The label of the key to activate.
         label: String,
     },
+    /// Update samsara to the latest release (self-update).
+    Update {
+        /// Reinstall even if already on the latest version.
+        #[arg(long)]
+        force: bool,
+    },
     /// Run the supervisor: watch for limit hits and auto-rotate.
     Daemon {
         /// Fallback cooldown when the server sends no retry-after (e.g. "12h").
@@ -65,6 +71,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Command::List => cmd_list(),
         Command::Status => cmd_status(),
         Command::Switch { label } => cmd_switch(label),
+        Command::Update { force } => crate::update::run(force).await,
         Command::Daemon {
             default_cooldown,
             dir,

@@ -9,6 +9,7 @@ mod model;
 mod paths;
 mod rotor;
 mod ui;
+mod update;
 mod watcher;
 
 use clap::{CommandFactory, FromArgMatches};
